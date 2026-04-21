@@ -2,11 +2,11 @@ import React from 'react';
 import { Stream } from '@cloudflare/stream-react';
 
 interface VideoPlayerProps {
-  videoId: string;
+  token: string;
   title: string;
 }
 
-export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoId, title }) => {
+export const VideoPlayer: React.FC<VideoPlayerProps> = ({ token, title }) => {
   return (
     <div className="video-player-wrapper">
       <div className="video-player-header">
@@ -15,7 +15,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoId, title }) => {
       <div className="video-player-container">
         <Stream
           controls
-          src={videoId}
+          src={token}
           className="cloudflare-stream-player"
           responsive={true}
         />

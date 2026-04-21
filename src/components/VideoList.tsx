@@ -11,8 +11,16 @@ interface Video {
 export const VideoList: React.FC = () => {
   const [videos, setVideos] = useState<Video[]>([]);
   const [activeUid, setActiveUid] = useState<string | null>(null);
+  const [activeToken, setActiveToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const fetchToken = (uid: string) => {
+    fetch(`/api/token/${uid}`)
+      .then((res) => res.json() as Promise<{ token: string }>)
+      .then((data) => setActiveToken(data.token))
+      .catch(() => setError('Could not load video token. Please try again.'));
+  };
 
   useEffect(() => {
     fetch('/api/videos')
@@ -22,7 +30,9 @@ export const VideoList: React.FC = () => {
       })
       .then((data) => {
         setVideos(data);
-        setActiveUid(data[0]?.uid ?? null);
+        const firstUid = data[0]?.uid ?? null;
+        setActiveUid(firstUid);
+        if (firstUid) fetchToken(firstUid);
       })
       .catch(() => setError('Could not load video list. Please try again.'))
       .finally(() => setLoading(false));
@@ -57,7 +67,7 @@ export const VideoList: React.FC = () => {
             <button
               key={video.uid}
               className={`video-list-item ${activeUid === video.uid ? 'active' : ''}`}
-              onClick={() => setActiveUid(video.uid)}
+              onClick={() => { setActiveUid(video.uid); fetchToken(video.uid); }}
             >
               <div className="video-item-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -70,8 +80,8 @@ export const VideoList: React.FC = () => {
         </div>
       </div>
       <div className="main-content">
-        {activeVideo ? (
-          <VideoPlayer videoId={activeVideo.uid} title={activeVideo.title} />
+        {activeVideo && activeToken ? (
+          <VideoPlayer token={activeToken} title={activeVideo.title} />
         ) : (
           <div className="empty-state">
             <p>No videos found</p>
