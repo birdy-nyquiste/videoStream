@@ -81,7 +81,7 @@ export const VideoList: React.FC = () => {
       </div>
       <div className="main-content">
         {activeVideo && activeToken ? (
-          <VideoPlayer token={activeToken} title={activeVideo.title} />
+          <VideoPlayer key={activeUid} token={activeToken} title={activeVideo.title} />
         ) : (
           <div className="empty-state">
             <p>No videos found</p>
