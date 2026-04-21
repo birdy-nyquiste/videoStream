@@ -18,12 +18,14 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${CF_API_TOKEN}`,
+        'Content-Type': 'application/json',
       },
     }
   );
 
   if (!response.ok) {
-    return new Response('Failed to generate token', { status: 502 });
+    const errBody = await response.text();
+    return new Response(`Cloudflare error ${response.status}: ${errBody}`, { status: 502 });
   }
 
   const data: TokenResponse = await response.json();
