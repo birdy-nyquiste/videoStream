@@ -1,12 +1,50 @@
-import React, { useState } from 'react';
-import { config } from '../config';
+import React, { useState, useEffect } from 'react';
 import { VideoPlayer } from './VideoPlayer';
 
-export const VideoList: React.FC = () => {
-  const { videos } = config;
-  const [activeVideoId, setActiveVideoId] = useState<string | null>(videos[0]?.id || null);
+interface Video {
+  uid: string;
+  title: string;
+  thumbnail: string;
+  duration: number;
+}
 
-  const activeVideo = videos.find(v => v.id === activeVideoId);
+export const VideoList: React.FC = () => {
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [activeUid, setActiveUid] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/videos')
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load videos');
+        return res.json() as Promise<Video[]>;
+      })
+      .then((data) => {
+        setVideos(data);
+        setActiveUid(data[0]?.uid ?? null);
+      })
+      .catch(() => setError('Could not load video list. Please try again.'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const activeVideo = videos.find((v) => v.uid === activeUid);
+
+  if (loading) {
+    return (
+      <div className="video-layout">
+        <div className="empty-state"><p>Loading videos...</p></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="video-layout">
+        <div className="empty-state"><p>{error}</p></div>
+      </div>
+    );
+  }
 
   return (
     <div className="video-layout">
@@ -17,9 +55,9 @@ export const VideoList: React.FC = () => {
         <div className="video-list">
           {videos.map((video) => (
             <button
-              key={video.id}
-              className={`video-list-item ${activeVideoId === video.id ? 'active' : ''}`}
-              onClick={() => setActiveVideoId(video.id)}
+              key={video.uid}
+              className={`video-list-item ${activeUid === video.uid ? 'active' : ''}`}
+              onClick={() => setActiveUid(video.uid)}
             >
               <div className="video-item-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -33,10 +71,10 @@ export const VideoList: React.FC = () => {
       </div>
       <div className="main-content">
         {activeVideo ? (
-          <VideoPlayer videoId={activeVideo.videoId} title={activeVideo.title} />
+          <VideoPlayer videoId={activeVideo.uid} title={activeVideo.title} />
         ) : (
           <div className="empty-state">
-            <p>Select a video to play</p>
+            <p>No videos found</p>
           </div>
         )}
       </div>
