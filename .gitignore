@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 .dev.vars
+*.tsbuildinfo
 
 # Claude Code
 .claude/
