@@ -265,7 +265,6 @@ body {
   aspect-ratio: 16 / 9;
   background-color: #000;
   border-radius: var(--radius-lg);
-  overflow: hidden;
   box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5);
   border: 1px solid var(--border-color);
 }
