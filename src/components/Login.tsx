@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { config } from '../config';
 
 interface LoginProps {
@@ -9,6 +9,7 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isAnimating, setIsAnimating] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,9 +21,8 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
       setError('Incorrect password. Please try again.');
       setPassword('');
       // Quick shake animation
-      const form = document.getElementById('login-form');
-      form?.classList.add('shake');
-      setTimeout(() => form?.classList.remove('shake'), 400);
+      formRef.current?.classList.add('shake');
+      setTimeout(() => formRef.current?.classList.remove('shake'), 400);
     }
   };
 
@@ -33,7 +33,7 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
           <h1>Secure Access</h1>
           <p>Please enter the password to view this content.</p>
         </div>
-        <form id="login-form" onSubmit={handleSubmit} className="login-form">
+        <form ref={formRef} onSubmit={handleSubmit} className="login-form">
           <div className="input-group">
             <input
               type="password"
