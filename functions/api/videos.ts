@@ -8,6 +8,7 @@ interface StreamVideo {
   meta: { name?: string };
   thumbnail: string;
   duration: number;
+  allowedOrigins?: string[];
 }
 
 interface StreamApiResponse {
@@ -38,6 +39,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     title: v.meta?.name || v.uid,
     thumbnail: v.thumbnail,
     duration: v.duration,
+    allowedOrigins: v.allowedOrigins ?? [],
   }));
 
   return Response.json(videos, {
