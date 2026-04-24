@@ -245,6 +245,28 @@ body {
   fill: var(--text-primary);
 }
 
+.video-item-details {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.video-item-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
+.video-item-creator {
+  font-size: 0.75rem;
+  color: #6b6b74;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 0.2rem;
+}
+
 .video-list-item.restricted {
   color: #52525b;
   cursor: not-allowed;

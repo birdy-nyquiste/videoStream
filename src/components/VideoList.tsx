@@ -4,6 +4,7 @@ import { VideoPlayer } from './VideoPlayer';
 interface Video {
   uid: string;
   title: string;
+  creator?: string;
   thumbnail: string;
   duration: number;
   allowedOrigins: string[];
@@ -92,7 +93,10 @@ export const VideoList: React.FC = () => {
             </svg>
           )}
         </div>
-        <span className="video-item-title">{video.title}</span>
+        <div className="video-item-details">
+          <span className="video-item-title">{video.title}</span>
+          {video.creator && <span className="video-item-creator">{video.creator}</span>}
+        </div>
       </button>
     );
   };
@@ -117,7 +121,7 @@ export const VideoList: React.FC = () => {
     <div className="video-layout">
       <div className="sidebar">
         <div className="sidebar-header">
-          <h2>Video Library</h2>
+          <h2>ReAngle Video Library</h2>
         </div>
         <div className="video-list">
           {allowedVideos.length > 0 && (

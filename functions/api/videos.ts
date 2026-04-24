@@ -5,7 +5,7 @@ interface Env {
 
 interface StreamVideo {
   uid: string;
-  meta: { name?: string };
+  meta: { name?: string; creator?: string };
   thumbnail: string;
   duration: number;
   allowedOrigins?: string[];
@@ -37,6 +37,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const videos = data.result.map((v) => ({
     uid: v.uid,
     title: v.meta?.name || v.uid,
+    creator: v.meta?.creator,
     thumbnail: v.thumbnail,
     duration: v.duration,
     allowedOrigins: v.allowedOrigins ?? [],
