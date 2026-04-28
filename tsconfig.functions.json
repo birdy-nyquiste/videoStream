@@ -8,6 +8,7 @@
     "types": ["@cloudflare/workers-types"],
     "strict": true,
     "noEmit": true,
+    "skipLibCheck": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force"
   },

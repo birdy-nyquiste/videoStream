@@ -1,5 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { VideoPlayer } from './VideoPlayer';
+import { EmailLogin } from './EmailLogin';
+import { Paywall } from './Paywall';
+import { PaymentReturn } from './PaymentReturn';
+import { supabase } from '../lib/supabase';
 
 interface Video {
   uid: string;
@@ -24,6 +28,8 @@ function canPlay(video: Video): boolean {
   return video.allowedOrigins.some((o) => hostMatches(host, o));
 }
 
+type Gate = null | 'login' | 'paywall' | 'paymentReturn';
+
 export const VideoList: React.FC = () => {
   const [videos, setVideos] = useState<Video[]>([]);
   const [activeUid, setActiveUid] = useState<string | null>(null);
@@ -32,25 +38,126 @@ export const VideoList: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchToken = (uid: string) => {
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const accessTokenRef = useRef<string | null>(null);
+  const [gate, setGate] = useState<Gate>(() => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('paid') === '1' ? 'paymentReturn' : null;
+  });
+  const pendingPlayUidRef = useRef<string | null>(null);
+  const videosRef = useRef<Video[]>([]);
+  const requestPlayRef = useRef<(video: Video) => void>(() => {});
+
+  const refreshEntitlement = useCallback(async (): Promise<boolean> => {
+    const { data, error: entErr } = await supabase
+      .from('entitlements')
+      .select('user_id')
+      .maybeSingle();
+    if (entErr) return false;
+    const ok = !!data;
+    return ok;
+  }, []);
+
+  const tryResumePending = useCallback(() => {
+    const uid = pendingPlayUidRef.current;
+    if (!uid) return;
+    const video = videosRef.current.find((v) => v.uid === uid);
+    if (!video) return;
+    pendingPlayUidRef.current = null;
+    requestPlayRef.current(video);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (!mounted) return;
+      const session = data.session;
+      accessTokenRef.current = session?.access_token ?? null;
+      setUserEmail(session?.user.email ?? null);
+      if (session) await refreshEntitlement();
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      accessTokenRef.current = session?.access_token ?? null;
+      setUserEmail(session?.user.email ?? null);
+      if (session) {
+        const ok = await refreshEntitlement();
+        if (ok) tryResumePending();
+      }
+    });
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
+  }, [refreshEntitlement, tryResumePending]);
+
+  const fetchToken = useCallback(async (uid: string) => {
     setTokenLoading(true);
     setActiveToken(null);
-    fetch(`/api/token/${uid}`)
-      .then((res) => res.json() as Promise<{ token: string }>)
-      .then((data) => setActiveToken(data.token))
-      .catch(() => setError('Could not load video token. Please try again.'))
-      .finally(() => setTokenLoading(false));
-  };
-
-  const selectVideo = (video: Video) => {
-    setActiveUid(video.uid);
-    if (canPlay(video)) {
-      fetchToken(video.uid);
-    } else {
-      setActiveToken(null);
+    try {
+      const jwt = accessTokenRef.current;
+      if (!jwt) {
+        pendingPlayUidRef.current = uid;
+        setGate('login');
+        return;
+      }
+      const res = await fetch(`/api/token/${uid}`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      if (res.status === 401) {
+        pendingPlayUidRef.current = uid;
+        setGate('login');
+        return;
+      }
+      if (res.status === 402) {
+        pendingPlayUidRef.current = uid;
+        setGate('paywall');
+        return;
+      }
+      if (!res.ok) {
+        setError('Could not load video token. Please try again.');
+        return;
+      }
+      const data = (await res.json()) as { token: string };
+      setActiveToken(data.token);
+    } catch {
+      setError('Could not load video token. Please try again.');
+    } finally {
       setTokenLoading(false);
     }
-  };
+  }, []);
+
+  const requestPlay = useCallback(
+    async (video: Video) => {
+      setActiveUid(video.uid);
+      if (!canPlay(video)) {
+        setActiveToken(null);
+        setTokenLoading(false);
+        return;
+      }
+      if (!userEmail) {
+        pendingPlayUidRef.current = video.uid;
+        setGate('login');
+        return;
+      }
+      fetchToken(video.uid);
+    },
+    [userEmail, fetchToken]
+  );
+
+  const selectThumb = useCallback((video: Video) => {
+    setActiveUid(video.uid);
+    setActiveToken(null);
+    setTokenLoading(false);
+  }, []);
+
+  useEffect(() => {
+    videosRef.current = videos;
+  }, [videos]);
+
+  useEffect(() => {
+    requestPlayRef.current = requestPlay;
+  }, [requestPlay]);
 
   useEffect(() => {
     fetch('/api/videos')
@@ -60,12 +167,33 @@ export const VideoList: React.FC = () => {
       })
       .then((data) => {
         setVideos(data);
-        const firstPlayable = data.find(canPlay) ?? data[0];
-        if (firstPlayable) selectVideo(firstPlayable);
+        const first = data.find(canPlay) ?? data[0];
+        if (first) selectThumb(first);
       })
       .catch(() => setError('Could not load video list. Please try again.'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [selectThumb]);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setGate(null);
+    pendingPlayUidRef.current = null;
+    setActiveToken(null);
+  };
+
+  const closeGate = () => {
+    setGate(null);
+    pendingPlayUidRef.current = null;
+  };
+
+  const handlePaymentActivated = async () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('paid');
+    window.history.replaceState({}, '', url.pathname + url.search);
+    await refreshEntitlement();
+    setGate(null);
+    tryResumePending();
+  };
 
   const activeVideo = videos.find((v) => v.uid === activeUid);
   const activeAllowed = activeVideo ? canPlay(activeVideo) : false;
@@ -78,7 +206,7 @@ export const VideoList: React.FC = () => {
       <button
         key={video.uid}
         className={`video-list-item ${activeUid === video.uid ? 'active' : ''} ${playable ? '' : 'restricted'}`}
-        onClick={() => selectVideo(video)}
+        onClick={() => requestPlay(video)}
         title={playable ? undefined : "You don't have access to this video"}
       >
         <div className="video-item-icon">
@@ -122,6 +250,12 @@ export const VideoList: React.FC = () => {
       <div className="sidebar">
         <div className="sidebar-header">
           <h2>ReAngle Video Library</h2>
+          {userEmail && (
+            <div className="sidebar-user">
+              <span className="sidebar-user-email" title={userEmail}>{userEmail}</span>
+              <button className="text-button" onClick={handleSignOut}>Sign out</button>
+            </div>
+          )}
         </div>
         <div className="video-list">
           {allowedVideos.length > 0 && (
@@ -154,7 +288,7 @@ export const VideoList: React.FC = () => {
               </div>
             </div>
           </div>
-        ) : tokenLoading || !activeToken ? (
+        ) : tokenLoading ? (
           <div className="video-player-wrapper">
             <div className="video-player-header"><h2>{activeVideo.title}</h2></div>
             <div className="video-player-container video-placeholder">
@@ -163,10 +297,48 @@ export const VideoList: React.FC = () => {
               </div>
             </div>
           </div>
+        ) : !activeToken ? (
+          <div className="video-player-wrapper">
+            <div className="video-player-header"><h2>{activeVideo.title}</h2></div>
+            <div className="video-player-container video-placeholder">
+              <div className="placeholder-content">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                <p>Click play to start</p>
+                <button className="submit-button" onClick={() => requestPlay(activeVideo)}>
+                  Play
+                </button>
+              </div>
+            </div>
+          </div>
         ) : (
           <VideoPlayer key={activeUid} token={activeToken} title={activeVideo.title} />
         )}
       </div>
+
+      {gate === 'login' && (
+        <EmailLogin onCancel={closeGate} />
+      )}
+      {gate === 'paywall' && userEmail && (
+        <Paywall
+          email={userEmail}
+          getAccessToken={() => accessTokenRef.current}
+          onCancel={closeGate}
+          onSignOut={handleSignOut}
+        />
+      )}
+      {gate === 'paymentReturn' && (
+        <PaymentReturn
+          onActivated={handlePaymentActivated}
+          onClose={() => {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('paid');
+            window.history.replaceState({}, '', url.pathname);
+            setGate(null);
+          }}
+        />
+      )}
     </div>
   );
 };
