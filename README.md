@@ -7,7 +7,7 @@ A password-protected video streaming site with a Stripe paywall, built with Reac
 Three independent gates:
 
 1. **Site password** — anyone reaching the URL must enter the site password to see the library. Stored in `sessionStorage`.
-2. **Magic-link login** — required to play a video. Email-only, no passwords. Sessions persist 30 days.
+2. **Email OTP login** — required to play a video. User receives a 6-digit code by email and enters it in the same tab. Sessions persist 30 days.
 3. **One-time Stripe payment** — $9.99 lifetime access to the library. Enforced server-side at the Stream signed-token endpoint.
 
 Per-video `allowedOrigins` (set in Cloudflare Stream) is independent of the paywall — a paid user on a non-allowed origin still can't play that specific video.
@@ -47,7 +47,7 @@ Find your Account ID in the dashboard sidebar (Workers & Pages or any domain pag
 In your Supabase project:
 
 - Apply the schema in `supabase/migrations/` (or run the SQL from `CLAUDE.md` → Architecture).
-- Authentication → URL Configuration → Redirect URLs: add both `http://localhost:8788` and your prod domain.
+- Authentication → Emails → Email Templates → "Magic Link": replace the body with an OTP-only template that uses `{{ .Token }}` (no `{{ .ConfirmationURL }}`). The auth flow is OTP, not magic link.
 - Authentication → Emails: optionally configure custom SMTP (the built-in is ~4 emails/hour on free tier).
 - Project Settings → API: copy the Project URL, the publishable key, and the **service role key**.
 
@@ -132,11 +132,7 @@ In Stripe dashboard → Developers → Webhooks → Add endpoint:
 - Events: `checkout.session.completed`
 - Copy the signing secret into `STRIPE_WEBHOOK_SECRET` (different from the local `stripe listen` secret).
 
-### 4. Add prod domain to Supabase Auth
-
-Add the prod domain to Supabase → Authentication → URL Configuration → Redirect URLs.
-
-### 5. Redeploy
+### 4. Redeploy
 
 Push a new commit (or trigger redeploy) for env vars to take effect.
 
@@ -147,7 +143,7 @@ Upload to Cloudflare Stream and set the **Name** field — that becomes the titl
 ## Operational SOPs
 
 - **Refunds:** not auto-handled. Manually `delete from entitlements where user_id = '...'` in Supabase.
-- **Magic-link rate limit:** Supabase free tier ~4 emails/hour. To use Resend: verify your sending domain in Resend, then in Supabase → Authentication → Emails → SMTP Settings, set host `smtp.resend.com`, port `465`, username `resend`, password = a Resend API key, sender = `noreply@your-verified-domain`. After enabling custom SMTP, raise the limit under Authentication → Rate Limits.
+- **Email rate limit:** Supabase free tier ~4 emails/hour. To use Resend: verify your sending domain in Resend, then in Supabase → Authentication → Emails → SMTP Settings, set host `smtp.resend.com`, port `465`, username `resend`, password = a Resend API key, sender = `noreply@your-verified-domain`. After enabling custom SMTP, raise the limit under Authentication → Rate Limits.
 - **Locked out user:** delete their row from `entitlements` (revokes paywall) or `auth.users` (revokes login entirely).
 
 ## Project structure
@@ -164,8 +160,7 @@ Upload to Cloudflare Stream and set the **Name** field — that becomes the titl
 ├── src/
 │   ├── components/
 │   │   ├── Login.tsx               # Site password gate
-│   │   ├── EmailLogin.tsx          # Supabase magic-link form
-│   │   ├── AuthCallback.tsx        # /auth/callback handler
+│   │   ├── EmailLogin.tsx          # Email + 6-digit OTP form
 │   │   ├── Paywall.tsx             # Stripe checkout entry
 │   │   ├── PaymentReturn.tsx       # Post-payment polling
 │   │   ├── VideoList.tsx           # Sidebar + player layout

@@ -7,25 +7,41 @@ interface EmailLoginProps {
 
 export const EmailLogin: React.FC<EmailLoginProps> = ({ onCancel }) => {
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [code, setCode] = useState('');
+  const [step, setStep] = useState<'email' | 'code'>('email');
+  const [status, setStatus] = useState<'idle' | 'sending' | 'verifying'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const sendCode = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
     setStatus('sending');
     setErrorMsg('');
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
+      options: { shouldCreateUser: true },
     });
+    setStatus('idle');
     if (error) {
-      setStatus('error');
       setErrorMsg(error.message);
     } else {
-      setStatus('sent');
+      setStep('code');
+    }
+  };
+
+  const verifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!code) return;
+    setStatus('verifying');
+    setErrorMsg('');
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token: code.trim(),
+      type: 'email',
+    });
+    setStatus('idle');
+    if (error) {
+      setErrorMsg(error.message);
     }
   };
 
@@ -34,15 +50,14 @@ export const EmailLogin: React.FC<EmailLoginProps> = ({ onCancel }) => {
       <div className="paywall-card">
         <div className="paywall-header">
           <h2>Sign in to continue</h2>
-          <p>Enter your email and we'll send you a magic link.</p>
+          <p>
+            {step === 'email'
+              ? "Enter your email and we'll send you a 6-digit code."
+              : `Enter the code sent to ${email}.`}
+          </p>
         </div>
-        {status === 'sent' ? (
-          <div className="paywall-body">
-            <p>Check <strong>{email}</strong> for a sign-in link. You can close this and click the link in your inbox.</p>
-            <button className="secondary-button" onClick={onCancel}>Close</button>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="login-form">
+        {step === 'email' ? (
+          <form onSubmit={sendCode} className="login-form">
             <div className="input-group">
               <input
                 type="email"
@@ -55,15 +70,43 @@ export const EmailLogin: React.FC<EmailLoginProps> = ({ onCancel }) => {
               />
             </div>
             {errorMsg && <div className="error-message">{errorMsg}</div>}
-            <button
-              type="submit"
-              className="submit-button"
-              disabled={status === 'sending'}
-            >
-              {status === 'sending' ? 'Sending…' : 'Send magic link'}
+            <button type="submit" className="submit-button" disabled={status === 'sending'}>
+              {status === 'sending' ? 'Sending…' : 'Send code'}
             </button>
             <button type="button" className="secondary-button" onClick={onCancel}>
               Cancel
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={verifyCode} className="login-form">
+            <div className="input-group">
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="123456"
+                required
+                autoFocus
+                disabled={status === 'verifying'}
+              />
+            </div>
+            {errorMsg && <div className="error-message">{errorMsg}</div>}
+            <button type="submit" className="submit-button" disabled={status === 'verifying'}>
+              {status === 'verifying' ? 'Verifying…' : 'Verify'}
+            </button>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => {
+                setStep('email');
+                setCode('');
+                setErrorMsg('');
+              }}
+              disabled={status === 'verifying'}
+            >
+              Use a different email
             </button>
           </form>
         )}

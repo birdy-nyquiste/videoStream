@@ -175,10 +175,14 @@ export const VideoList: React.FC = () => {
   }, [selectThumb]);
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    setGate(null);
-    pendingPlayUidRef.current = null;
-    setActiveToken(null);
+    await Promise.race([
+      supabase.auth.signOut(),
+      new Promise((resolve) => setTimeout(resolve, 1500)),
+    ]);
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith('sb-'))
+      .forEach((k) => localStorage.removeItem(k));
+    window.location.reload();
   };
 
   const closeGate = () => {

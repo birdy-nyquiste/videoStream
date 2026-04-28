@@ -35,12 +35,11 @@ Why keyed on `user_id` not `email`: survives email changes, immune to typo-misma
 | File | Responsibility |
 | --- | --- |
 | `src/lib/supabase.ts` | Browser client, PKCE flow, persistent 30-day session |
-| `src/components/EmailLogin.tsx` | Magic-link form, `emailRedirectTo: ${origin}/auth/callback` |
-| `src/components/AuthCallback.tsx` | Bypasses site-password gate, exchanges code for session, redirects to `/` |
+| `src/components/EmailLogin.tsx` | Two-step OTP form: email → 6-digit code → `verifyOtp` |
 | `src/components/Paywall.tsx` | "Pay $9.99" → POST `/api/checkout` with JWT → redirect to Stripe |
 | `src/components/PaymentReturn.tsx` | Polls entitlements for own row (15× × 1s), then "contact support" fallback |
 | `src/components/VideoList.tsx` | Tracks session + entitlement, branches on play click, threads JWT to `/api/token`, auto-resumes deferred play after login or post-payment, sidebar shows email + Sign out |
-| `src/App.tsx` | Whitelists `/auth/callback` so magic-link returns bypass the password gate |
+| `src/App.tsx` | Site-password gate → renders `<VideoList>` once unlocked |
 
 ### Play branching logic
 
@@ -48,11 +47,12 @@ Why keyed on `user_id` not `email`: survives email changes, immune to typo-misma
 click video →
   if origin not allowed → "no access" placeholder
   if no Supabase session → <EmailLogin>, save pending
-  if no entitlement → refresh; if still none, <Paywall>, save pending
-  else → fetchToken with JWT → <VideoPlayer>
+  else → fetchToken with JWT
+    if 402 → <Paywall>, save pending
+    else → <VideoPlayer>
 ```
 
-After login completes (`onAuthStateChange`) or payment activates (`PaymentReturn → onActivated`), the saved pending uid auto-resumes.
+The server (`/api/token/[uid]`) is the single source of truth for entitlement — no client-side entitlement check on click. After login completes (`onAuthStateChange`) or payment activates (`PaymentReturn → onActivated`), the saved pending uid auto-resumes.
 
 ---
 
@@ -65,7 +65,15 @@ After login completes (`onAuthStateChange`) or payment activates (`PaymentReturn
 3. **Stripe** (test mode):
    - Dashboard → Products → create one-time $9.99 product → copy `price_...`.
    - Dashboard → Developers → API keys → copy `sk_test_...`.
-4. **Supabase Auth Redirect URLs**: Dashboard → Authentication → URL Configuration → add `http://localhost:8788`.
+4. **Supabase email template**: Dashboard → Authentication → Emails → Email Templates → "Magic Link". Replace the body so it shows only the 6-digit code, e.g.:
+
+   ```html
+   <p>Your sign-in code is:</p>
+   <p style="font-size: 24px; letter-spacing: 4px;"><strong>{{ .Token }}</strong></p>
+   <p>This code expires in 1 hour.</p>
+   ```
+
+   (No `{{ .ConfirmationURL }}` — we use OTP, not the link.)
 
 ### One-time: write `.dev.vars`
 
@@ -112,9 +120,9 @@ The `whsec_...` it prints is sandbox-specific — use that.
 ### Test the full flow
 
 1. Open `http://localhost:8788` → enter site password.
-2. Click a video → EmailLogin overlay → enter your email → check inbox → click magic link.
-3. New tab opens at `/auth/callback` → "Signing you in…" → redirects to `/`.
-4. Back in original tab: auth state change fires, refreshes entitlement (none) → click video again → Paywall overlay.
+2. Click a video → EmailLogin overlay → enter your email → "Send code".
+3. Check your inbox → copy the 6-digit code → paste into the form → "Verify".
+4. Session activates in the same tab → click video again → Paywall overlay (server returned 402).
 5. Click "Pay $9.99" → Stripe Checkout (use test card `4242 4242 4242 4242`, any future expiry, any CVC).
 6. Stripe redirects to `/?paid=1` → PaymentReturn overlay polls → webhook fires (Terminal 2 logs it) → entitlement appears → overlay closes → video token fetched → playback starts.
 
@@ -135,7 +143,7 @@ If anything breaks, check Terminal 1 (Pages Function logs) and Terminal 2 (webho
    - URL: `https://YOUR-DOMAIN/api/stripe/webhook`.
    - Events: select **only** `checkout.session.completed`.
    - Copy the signing secret (`whsec_...`) — different from your local one.
-3. **Supabase Auth Redirect URL**: Dashboard → Authentication → URL Configuration → add `https://YOUR-DOMAIN`.
+3. **Supabase email template**: same OTP-only template applies in production (it's a single template, not per-environment).
 
 ### Cloudflare Pages env vars
 

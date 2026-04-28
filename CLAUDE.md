@@ -39,7 +39,7 @@ Password-protected video streaming SPA with a Stripe paywall, backed by Cloudfla
 There are **three independent gates**:
 
 1. **Site password** (`VITE_SITE_PASSWORD`) — gates the whole UI. Stored in `sessionStorage`. Browser-session only.
-2. **Supabase magic-link login** — required to *play* a video. Persists 30 days via the Supabase JS client. Login form: `EmailLogin.tsx`.
+2. **Supabase email OTP login** — required to *play* a video. User receives a 6-digit code via email and enters it in the same tab (`signInWithOtp` → `verifyOtp`). Persists 30 days. Login form: `EmailLogin.tsx`. We use OTP rather than magic link to avoid the multi-tab `navigator.locks` contention that arises when the magic link opens in a new tab while the original tab is still running its auth-refresh loop.
 3. **Stripe entitlement** — once-paid lifetime access. Stored in Supabase `entitlements` table keyed by `user_id`. Enforced by `/api/token/[uid]`.
 
 Per-video `allowedOrigins` is a separate axis: a paid user on a non-allowed origin still can't play that specific video.
@@ -47,15 +47,18 @@ Per-video `allowedOrigins` is a separate axis: a paid user on a non-allowed orig
 ### Auth flow
 
 - `App.tsx` checks `sessionStorage.isAuthenticated` on mount → renders `<Login>` or `<VideoList>`.
-- Path `/auth/callback` bypasses the password gate and renders `<AuthCallback>`, which exchanges the PKCE code for a Supabase session, then redirects to `/`.
-- `<VideoList>` subscribes to `supabase.auth.onAuthStateChange` and tracks `entitled` via a self-row read on `entitlements` (RLS scopes to own row).
+- `<VideoList>` subscribes to `supabase.auth.onAuthStateChange`, caches the access token in a ref, and reads `entitlements` (self-row, RLS-scoped) once on mount and on auth changes.
 
 ### Play flow
 
 Click a video → `requestPlay`:
 - if `!session` → show `<EmailLogin>`, save `pendingPlayUid`
-- if `session && !entitled` → refresh entitlement; if still none, show `<Paywall>`, save `pendingPlayUid`
-- else → `fetchToken(uid)` with `Authorization: Bearer <jwt>` → mint Stream token → `<VideoPlayer>`
+- else → `fetchToken(uid)` with `Authorization: Bearer <jwt>` (cached from `onAuthStateChange`)
+  - 401 → show `<EmailLogin>`
+  - 402 → show `<Paywall>`
+  - 200 → mint Stream token → `<VideoPlayer>`
+
+The server is the source of truth for entitlement; there is no client-side entitlement check on the click path. This minimizes `supabase-js` calls per click (which otherwise contend on the auth lock).
 
 After auth state changes (login completes) or after `<PaymentReturn>` confirms entitlement, the pending uid auto-resumes.
 
@@ -80,9 +83,8 @@ After auth state changes (login completes) or after `<PaymentReturn>` confirms e
 
 ### Files
 
-- `src/lib/supabase.ts` — browser Supabase client, PKCE flow, persistent session
-- `src/components/EmailLogin.tsx` — magic-link form
-- `src/components/AuthCallback.tsx` — handles `/auth/callback`
+- `src/lib/supabase.ts` — browser Supabase client, persistent session
+- `src/components/EmailLogin.tsx` — two-step OTP form (email → 6-digit code → `verifyOtp`)
 - `src/components/Paywall.tsx` — "Pay $9.99" → POST `/api/checkout`
 - `src/components/PaymentReturn.tsx` — post-payment polling
 - `functions/_lib/auth.ts` — `extractBearer`, `verifyJwt` (via `supabase.auth.getUser`), `serviceClient`, `hasEntitlement`
@@ -94,7 +96,7 @@ After auth state changes (login completes) or after `<PaymentReturn>` confirms e
 
 1. **Run wrangler, not vite, to test paywall flow** — `vite dev` doesn't run Pages Functions.
 2. **Stripe webhook in local:** `stripe listen --forward-to http://localhost:8788/api/stripe/webhook` — use the printed signing secret as `STRIPE_WEBHOOK_SECRET` in `.dev.vars`.
-3. **Supabase Auth Redirect URLs:** add both `http://localhost:8788` (or whatever port wrangler picks) and the prod domain to Supabase → Authentication → URL Configuration → Redirect URLs.
+3. **Supabase email template:** the "Magic Link" template must use `{{ .Token }}` only (no `{{ .ConfirmationURL }}`). Auth flow is OTP, not magic link.
 
 ## Operational notes
 
