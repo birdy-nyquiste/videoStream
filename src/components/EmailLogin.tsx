@@ -52,7 +52,7 @@ export const EmailLogin: React.FC<EmailLoginProps> = ({ onCancel }) => {
           <h2>Sign in to continue</h2>
           <p>
             {step === 'email'
-              ? "Enter your email and we'll send you a 6-digit code."
+              ? "Enter your email and we'll send you a sign-in code."
               : `Enter the code sent to ${email}.`}
           </p>
         </div>
@@ -86,7 +86,7 @@ export const EmailLogin: React.FC<EmailLoginProps> = ({ onCancel }) => {
                 autoComplete="one-time-code"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                placeholder="123456"
+                placeholder="Enter code"
                 required
                 autoFocus
                 disabled={status === 'verifying'}

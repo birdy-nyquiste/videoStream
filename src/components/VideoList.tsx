@@ -81,6 +81,7 @@ export const VideoList: React.FC = () => {
       accessTokenRef.current = session?.access_token ?? null;
       setUserEmail(session?.user.email ?? null);
       if (session) {
+        setGate((g) => (g === 'login' ? null : g));
         const ok = await refreshEntitlement();
         if (ok) tryResumePending();
       }
